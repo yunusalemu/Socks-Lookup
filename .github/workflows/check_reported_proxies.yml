@@ -1,0 +1,201 @@
+# .github/workflows/check_reported_proxies.yml
+name: Check Reported Proxies
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # runs every 30 minutes automatically
+  workflow_dispatch:           # allows manual trigger from Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Install dependencies
+        run: pip install PySocks requests
+
+      - name: Check proxies and post results
+        env:
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          API_SECRET:      ${{ secrets.API_SECRET }}
+        run: |
+          python3 - <<'PYEOF'
+          import socks
+          import time
+          import requests
+          import os
+
+          SCRIPT_URL = os.environ["APPS_SCRIPT_URL"]
+          SECRET     = os.environ["API_SECRET"]
+
+          def classify_connection(isp_name):
+              isp_lower = isp_name.lower()
+              if any(x in isp_lower for x in [
+                  "mobile", "cellular", "wireless", "lte", "4g", "5g"
+              ]):
+                  return "Cellular"
+              if any(x in isp_lower for x in [
+                  "hosting", "datacenter", "server", "cloud", "colo"
+              ]):
+                  return "Business"
+              return "Residential"
+
+          def check_proxy(host, port):
+              """
+              Tries SOCKS5 then SOCKS4.
+              No credentials — proxies are public.
+              Returns full result dict.
+              """
+              for ptype, pname in [
+                  (socks.SOCKS5, "SOCKS5"),
+                  (socks.SOCKS4, "SOCKS4")
+              ]:
+                  try:
+                      s = socks.socksocket()
+                      s.set_proxy(ptype, host, int(port))
+                      s.settimeout(8)
+
+                      t = time.time()
+                      s.connect(("www.google.com", 80))
+                      s.send(
+                          b"GET / HTTP/1.1\r\n"
+                          b"Host: www.google.com\r\n"
+                          b"Connection: close\r\n\r\n"
+                      )
+                      data    = s.recv(512)
+                      latency = int((time.time() - t) * 1000)
+                      s.close()
+
+                      if b"HTTP" not in data:
+                          continue
+
+                      # Geo lookup through the proxy (no exit IP stored)
+                      auth         = ""
+                      proxies_dict = {
+                          "http":  f"socks5h://{auth}{host}:{port}",
+                          "https": f"socks5h://{auth}{host}:{port}",
+                      }
+
+                      geo = {}
+                      try:
+                          r = requests.get(
+                              "http://ip-api.com/json",
+                              proxies=proxies_dict,
+                              timeout=10
+                          )
+                          geo = r.json() if r.status_code == 200 else {}
+                      except Exception as geo_err:
+                          print(f"  Geo lookup failed: {geo_err}")
+
+                      country  = geo.get("country",    "Unknown")
+                      region   = geo.get("regionName", "Unknown")
+                      city     = geo.get("city",       "Unknown")
+                      isp      = geo.get("isp",        "Unknown")
+                      use_type = classify_connection(isp)
+
+                      return {
+                          "alive":     True,
+                          "latency":   latency,
+                          "proxyType": pname,
+                          "country":   country,
+                          "region":    region,
+                          "city":      city,
+                          "isp":       isp,
+                          "useType":   use_type,
+                          "error":     ""
+                      }
+
+                  except Exception as ex:
+                      print(f"  {pname} failed: {ex}")
+                      continue
+
+              # Both SOCKS5 and SOCKS4 failed
+              return {
+                  "alive":     False,
+                  "latency":   0,
+                  "proxyType": "None",
+                  "country":   "",
+                  "region":    "",
+                  "city":      "",
+                  "isp":       "",
+                  "useType":   "",
+                  "error":     "Unreachable"
+              }
+
+          # ── Step 1: Fetch pending proxies from sheet ───────────────
+          print("Fetching pending proxies from Apps Script...")
+          try:
+              r = requests.post(
+                  SCRIPT_URL,
+                  data={
+                      "action": "getpending",
+                      "secret": SECRET
+                  },
+                  timeout=30,
+                  allow_redirects=True
+              )
+              response_data = r.json()
+          except Exception as ex:
+              print(f"Failed to fetch pending proxies: {ex}")
+              exit(0)
+
+          if not response_data.get("ok"):
+              print(f"Apps Script error: {response_data.get('error')}")
+              exit(0)
+
+          proxies = response_data.get("proxies", [])
+          print(f"Found {len(proxies)} pending proxies to check")
+
+          if not proxies:
+              print("Nothing to check. Exiting.")
+              exit(0)
+
+          # ── Step 2: Check each proxy ───────────────────────────────
+          for proxy in proxies:
+              host = proxy.get("host", "").strip()
+              port = proxy.get("port", "").strip()
+
+              if not host or not port:
+                  print(f"Skipping invalid entry: {proxy}")
+                  continue
+
+              print(f"\nChecking {host}:{port}")
+              result = check_proxy(host, port)
+
+              label = "ALIVE" if result["alive"] else "DEAD"
+              print(
+                  f"  {label} | {result['latency']}ms"
+                  f" | {result['proxyType']}"
+                  f" | {result['country']}"
+                  f" | ISP: {result['isp']}"
+              )
+
+              # ── Step 3: Post result back to Apps Script ────────────
+              try:
+                  resp = requests.post(
+                      SCRIPT_URL,
+                      data={
+                          "action":    "proxyresult",
+                          "secret":    SECRET,
+                          "host":      host,
+                          "port":      port,
+                          "alive":     str(result["alive"]).lower(),
+                          "latency":   str(result["latency"]),
+                          "proxyType": result["proxyType"],
+                          "country":   result["country"],
+                          "region":    result["region"],
+                          "city":      result["city"],
+                          "isp":       result["isp"],
+                          "useType":   result["useType"],
+                          "error":     result["error"]
+                      },
+                      timeout=15,
+                      allow_redirects=True
+                  )
+                  print(f"  Posted result: {resp.status_code} {resp.text}")
+              except Exception as ex:
+                  print(f"  Failed to post result: {ex}")
+
+          print("\nAll proxies checked.")
+          PYEOF
