@@ -1,25 +1,25 @@
-name: Check Reported Proxies
+name: Automated Proxy Report Checker
 
 on:
   schedule:
-    - cron: '15 * * * *' # Runs automatically every hour. Change to '*/30 * * * *' for every 30 mins
-  workflow_dispatch: # Allows you to click a button to run it manually
+    - cron: '*/15 * * * *' # Executes automatically every 30 minutes. Change to '0 * * * *' for hourly.
+  workflow_dispatch:      # Enables a manual "Run Workflow" trigger button in your GitHub dashboard UI.
 
 jobs:
-  check-proxies:
+  verify-reports:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Clone Repository Workspace
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Initialize Python Environment
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Dependencies
+      - name: Configure Network Dependencies
         run: |
           pip install requests PySocks
 
-      - name: Run Proxy Checker Script
+      - name: Execute Verification Routine
         run: python proxy_report_checker.py
