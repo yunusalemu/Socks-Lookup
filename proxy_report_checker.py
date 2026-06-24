@@ -2,7 +2,7 @@ import socks
 import requests
 import concurrent.futures
 
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyzFW7SLwJEJMyYAf2YsHxETOWr_XrlVYSXGo47zh7iglnfuA9KucSnXVj0ZKKbPgkp/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwu-BLbeLrWIhX3O_EsMhgyCG12jeg8OvQKkaEldP5UI6snvgq8A6ScO6GU1jWMY8je/exec"
 
 def parse_proxy(ip_data_string):
     clean_str = ip_data_string.replace("Proxy Data: ", "").strip()
