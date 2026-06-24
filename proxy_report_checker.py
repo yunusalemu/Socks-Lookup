@@ -6,7 +6,7 @@ import json
 import os
 
 # Update this with your Google Web App deployment URL
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbym8dWuaZKOd6hwsBmATGOkhC0BvApuPqb8_tI1KTvD66Quj9iq8u5BOhWfKt_uTQcW/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyzFW7SLwJEJMyYAf2YsHxETOWr_XrlVYSXGo47zh7iglnfuA9KucSnXVj0ZKKbPgkp/exec"
 
 def parse_proxy(ip_data_string):
     """
@@ -31,7 +31,6 @@ def test_reported_proxy(item):
     try:
         host, port, user, password = parse_proxy(proxy_data)
         
-        # Test routine matching your classical proxy system framework
         for proxy_type in [socks.SOCKS5, socks.SOCKS4]:
             try:
                 s = socks.socksocket()
@@ -58,6 +57,10 @@ def main():
     print("🔍 Fetching unresolved proxy reports from Google Database...")
     try:
         res = requests.get(f"{WEB_APP_URL}?action=get_pending", timeout=30)
+        
+        # Debug block - shows raw response so we can see what Google returns
+        print(f"📋 Raw API response: {res.text[:500]}")
+        
         pending_items = res.json()
     except Exception as e:
         print(f"❌ Failed connection to Google API Engine: {e}")
@@ -67,10 +70,13 @@ def main():
         print("✅ Clean sheet. No pending report tasks found.")
         return
 
+    # Shows exactly what proxy data looks like coming from the sheet
+    for item in pending_items:
+        print(f"📌 Found pending: row={item['row']} | data='{item['proxyData']}'")
+
     print(f"⚙️ Running active multi-threaded validation on {len(pending_items)} proxies...")
     updates = []
     
-    # Run tests using concurrent thread pools to keep execution times optimal
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         futures = [executor.submit(test_reported_proxy, item) for item in pending_items]
         for future in concurrent.futures.as_completed(futures):
