@@ -6,7 +6,7 @@ import json
 import os
 
 # Update this with your Google Web App deployment URL
-WEB_APP_URL = "Yhttps://script.google.com/macros/s/AKfycbyf7o8V8zX2xn14bAZZmXRCh-tt7Rhj18m0Dj0lCTKuGJ-WT77vgR_pa79vvlrsvqHL/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyf7o8V8zX2xn14bAZZmXRCh-tt7Rhj18m0Dj0lCTKuGJ-WT77vgR_pa79vvlrsvqHL/exec"
 
 def parse_proxy(ip_data_string):
     """
